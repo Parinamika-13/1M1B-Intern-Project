@@ -19,8 +19,8 @@ export default function App() {
     const [isDetailOpen, setIsDetailOpen] = useState(false);
 
     // Profile Settings States (Requirement 2)
-    const [profileName, setProfileName] = useState('Sarah Jenkins');
-    const [profileTitle, setProfileTitle] = useState('Operations Director');
+    const [profileName, setProfileName] = useState('');
+    const [profileTitle, setProfileTitle] = useState('');
     const [profilePhoto, setProfilePhoto] = useState(null); // Base64 data URL string or null
 
     // Theme (Light/Dark mode) management with localStorage persistence (Requirement 3)
@@ -43,13 +43,8 @@ export default function App() {
         setIsLoggedIn(true);
         setActiveTab('dashboard');
 
-        if (role === 'manager') {
-            setProfileName('Sarah Jenkins');
-            setProfileTitle('Operations Director');
-        } else {
-            setProfileName(userProfile.name || 'Employee');
-            setProfileTitle(userProfile.role || 'Team Member');
-        }
+        setProfileName(userProfile.name || '');
+        setProfileTitle(userProfile.role_title || '');
     };
 
     const handleLogout = () => {

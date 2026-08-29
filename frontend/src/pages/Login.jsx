@@ -1,20 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
 
 export default function Login({ onLoginSuccess }) {
-    const [email, setEmail] = useState('sarah.jenkins@company.com');
-    const [password, setPassword] = useState('password123');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
     const [role, setRole] = useState('manager'); // 'manager' or 'employee'
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [demoAccounts, setDemoAccounts] = useState([]);
+
+    // Fetch demo accounts dynamically from the loaded dataset on mount (Requirement 4)
+    useEffect(() => {
+        let active = true;
+        const fetchDemoAccounts = async () => {
+            try {
+                const data = await apiService.getDemoAccounts();
+                if (active) {
+                    setDemoAccounts(data);
+                }
+            } catch (err) {
+                console.warn('Could not load demo accounts list dynamically.', err);
+            }
+        };
+        fetchDemoAccounts();
+        return () => { active = false; };
+    }, []);
 
     const handleRoleChange = (selectedRole) => {
         setRole(selectedRole);
-        if (selectedRole === 'manager') {
-            setEmail('sarah.jenkins@company.com');
-        } else {
-            setEmail('e001@company.com');
-        }
         setError('');
     };
 
@@ -123,21 +136,17 @@ export default function Login({ onLoginSuccess }) {
                     </button>
                 </form>
 
-                <div className="demo-credentials" style={{ marginTop: '24px' }}>
-                    <div className="demo-title">Demo Access Channels</div>
-                    <div className="demo-account" onClick={() => handleDemoLogin('sarah.jenkins@company.com', 'manager')}>
-                        <span>Sarah Jenkins (Manager)</span>
-                        <i className="fa-solid fa-arrow-right-to-bracket"></i>
+                {demoAccounts.length > 0 && (
+                    <div className="demo-credentials" style={{ marginTop: '24px' }}>
+                        <div className="demo-title">Demo Access Channels</div>
+                        {demoAccounts.map(acc => (
+                            <div key={acc.email} className="demo-account" onClick={() => handleDemoLogin(acc.email, acc.role)}>
+                                <span>{acc.name} ({acc.role})</span>
+                                <i className="fa-solid fa-arrow-right-to-bracket"></i>
+                            </div>
+                        ))}
                     </div>
-                    <div className="demo-account" onClick={() => handleDemoLogin('e001@company.com', 'employee')}>
-                        <span>Employee E001 (Engineering)</span>
-                        <i className="fa-solid fa-arrow-right-to-bracket"></i>
-                    </div>
-                    <div className="demo-account" onClick={() => handleDemoLogin('e012@company.com', 'employee')}>
-                        <span>Employee E012 (Designer)</span>
-                        <i className="fa-solid fa-arrow-right-to-bracket"></i>
-                    </div>
-                </div>
+                )}
             </div>
         </div>
     );

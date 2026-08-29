@@ -31,32 +31,32 @@ export default function PlaceholderViewPage({ tabName, role, currentUser }) {
     }, [tabName, currentUser]);
 
     // Handle Assistant Questions
-    const handleAskQuestion = (e) => {
+    const handleAskQuestion = async (e) => {
         e.preventDefault();
-        if (!question.trim()) return;
-
-        const newLog = [...chatLog, { sender: 'user', text: question }];
+        const userQ = question.trim();
+        if (!userQ) return;
+ 
+        const newLog = [...chatLog, { sender: 'user', text: userQ }];
         setChatLog(newLog);
         setQuestion('');
-
-        // Generate response based on user question keywords
-        setTimeout(() => {
-            let reply = "I'm analyzing your schedules. You have a balanced task checklist today with standard durations.";
-            const q = question.toLowerCase();
-            if (q.includes('overload') || q.includes('stressed') || q.includes('busy')) {
-                reply = detail && detail.utilization_percent > 110 ? 
-                    `Based on current metrics, your workload utilization is high (${Math.round(detail.utilization_percent)}%). I recommend checking focus blocks and requesting to reschedule meetings where you are optional.` :
-                    `Your current utilization sits at a healthy ${Math.round(detail?.utilization_percent || 85)}%. No overload risk is flagged today.`;
-            } else if (q.includes('prioritize') || q.includes('priority') || q.includes('do today')) {
-                reply = "Today's priority is addressing high-priority items near deadline limits (e.g. Optimize Database Indices). Avoid scheduled distractions during focus slots.";
-            } else if (q.includes('meeting') || q.includes('calendar')) {
-                reply = detail ? 
-                    `You have ${detail.meetings.length} scheduled meetings today totalling approx ${(detail.meeting_hours / 5).toFixed(1)} hours. Take regular breaks between calls.` :
-                    "You have a light meeting load today. Good opportunity to get deep focus work done!";
+ 
+        try {
+            const employeeId = currentUser?.employee_id;
+            if (!employeeId) return;
+            const result = await apiService.askEmployeeAssistant(employeeId, userQ);
+            
+            let aiText = result.response;
+            if (result.traceability && result.traceability.score) {
+                aiText += `\n\n[Trace Log - Priority Score: ${result.traceability.score.toFixed(1)} pts | Evaluated: ${result.traceability.evaluated_tasks_count} tasks]`;
+            } else if (result.traceability && result.traceability.utilization_percent) {
+                aiText += `\n\n[Trace Log - Utilization: ${result.traceability.utilization_percent}% | Tasks: ${result.traceability.active_task_hours}h | Meetings: ${result.traceability.meeting_hours}h]`;
             }
-
-            setChatLog(prev => [...prev, { sender: 'ai', text: reply }]);
-        }, 600);
+            
+            setChatLog(prev => [...prev, { sender: 'ai', text: aiText }]);
+        } catch (err) {
+            console.error(err);
+            setChatLog(prev => [...prev, { sender: 'ai', text: 'Connection to the Sustainable Work AI service is offline.' }]);
+        }
     };
 
     // Manager tab preview details

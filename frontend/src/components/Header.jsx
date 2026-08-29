@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiService } from '../services/api';
 
 export default function Header({ 
     activeTab, 
@@ -13,6 +14,87 @@ export default function Header({
     onLogout
 }) {
     const [alertsOpen, setAlertsOpen] = useState(false);
+    const [alerts, setAlerts] = useState([]);
+
+    useEffect(() => {
+        let active = true;
+        const fetchAlerts = async () => {
+            try {
+                if (currentRole === 'manager') {
+                    const warnings = await apiService.getEarlyWarnings();
+                    if (active) {
+                        const computedAlerts = [];
+                        if (warnings.high_workload && warnings.high_workload.length > 0) {
+                            computedAlerts.push({
+                                id: 'high-workload',
+                                text: `${warnings.high_workload.length} employees currently have high workload risk.`,
+                                severity: 'red'
+                            });
+                        }
+                        if (warnings.meeting_overload && warnings.meeting_overload.length > 0) {
+                            computedAlerts.push({
+                                id: 'meeting-overload',
+                                text: `${warnings.meeting_overload.length} employees have meeting fatigue risk.`,
+                                severity: 'amber'
+                            });
+                        }
+                        if (warnings.deadline_risk && warnings.deadline_risk.length > 0) {
+                            computedAlerts.push({
+                                id: 'deadline-risk',
+                                text: `${warnings.deadline_risk.length} employees have active tasks nearing deadline.`,
+                                severity: 'amber'
+                            });
+                        }
+                        if (computedAlerts.length === 0) {
+                            computedAlerts.push({
+                                id: 'clean',
+                                text: 'All operations indicators are performing within normal parameters.',
+                                severity: 'green'
+                            });
+                        }
+                        setAlerts(computedAlerts);
+                    }
+                } else if (currentUser) {
+                    const detail = await apiService.getEmployeeDashboard(currentUser.employee_id);
+                    if (active) {
+                        const computedAlerts = [];
+                        if (detail.workload_risk === 'High') {
+                            computedAlerts.push({
+                                id: 'emp-overloaded',
+                                text: `Your workload is currently high (${Math.round(detail.utilization_percent)}%). Try to schedule focus blocks.`,
+                                severity: 'red'
+                            });
+                        }
+                        if (detail.overdue_tasks > 0) {
+                            computedAlerts.push({
+                                id: 'emp-overdue',
+                                text: `You have ${detail.overdue_tasks} overdue tasks requiring attention.`,
+                                severity: 'amber'
+                            });
+                        }
+                        if (computedAlerts.length === 0) {
+                            computedAlerts.push({
+                                id: 'emp-clean',
+                                text: 'Your schedule metrics are balanced. Have a productive week!',
+                                severity: 'green'
+                            });
+                        }
+                        setAlerts(computedAlerts);
+                    }
+                }
+            } catch (err) {
+                console.warn('Failed to fetch dynamic alerts for header dropdown:', err);
+            }
+        };
+        fetchAlerts();
+        
+        // Refresh header alerts on tab changes or every 30 seconds
+        const interval = setInterval(fetchAlerts, 30000);
+        return () => {
+            active = false;
+            clearInterval(interval);
+        };
+    }, [currentRole, currentUser, activeTab]);
 
     const getProfileInitial = () => {
         if (currentRole === 'manager') return getInitials(profileName);
@@ -47,12 +129,6 @@ export default function Header({
     ];
 
     const currentTabs = currentRole === 'manager' ? managerTabs : employeeTabs;
-
-    // Simulated alerts
-    const alerts = [
-        { id: 1, text: 'Engineering has meeting fatigue risk this week.', severity: 'amber' },
-        { id: 2, text: '3 employees currently have high workload risk (>110% utilization).', severity: 'red' }
-    ];
 
     return (
         <header className="top-navbar">
@@ -105,7 +181,9 @@ export default function Header({
                         style={{ background: 'none', border: 'none' }}
                     >
                         <i className="fa-regular fa-bell fa-lg"></i>
-                        <span className="bell-badge"></span>
+                        {alerts.length > 0 && alerts[0].id !== 'clean' && alerts[0].id !== 'emp-clean' && (
+                            <span className="bell-badge"></span>
+                        )}
                     </button>
                     
                     {alertsOpen && (
@@ -131,8 +209,8 @@ export default function Header({
                                 borderBottom: '1px solid var(--border)',
                                 marginBottom: '4px',
                                 fontFamily: 'var(--font-mono)'
-                            }}>
-                                Operations Alerts
+                             }}>
+                                System Alerts
                             </div>
                             {alerts.map(alert => (
                                 <div 
@@ -141,7 +219,10 @@ export default function Header({
                                         padding: '10px 16px',
                                         fontSize: '0.8rem',
                                         color: 'var(--text-primary)',
-                                        borderLeft: `3px solid ${alert.severity === 'red' ? 'var(--danger)' : 'var(--warning)'}`,
+                                        borderLeft: `3px solid ${
+                                            alert.severity === 'red' ? 'var(--danger)' : 
+                                            alert.severity === 'green' ? 'var(--success)' : 'var(--warning)'
+                                        }`,
                                         backgroundColor: 'var(--bg-primary)',
                                         margin: '4px 8px',
                                         borderRadius: 'var(--radius-sm)',

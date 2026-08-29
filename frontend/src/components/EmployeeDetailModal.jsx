@@ -6,6 +6,7 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
     const [activeTab, setActiveTab] = useState('tasks');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [showTrace, setShowTrace] = useState(false);
 
     useEffect(() => {
         if (!employeeId) return;
@@ -79,12 +80,40 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                         <div className="detail-content">
                             {/* AI recommendation box */}
                             <div className="ai-insight-box">
-                                <div className="ai-insight-header">
-                                    <i className="fa-solid fa-wand-magic-sparkles"></i> AI Workload Recommendation
+                                <div className="ai-insight-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span><i className="fa-solid fa-wand-magic-sparkles"></i> AI Workload Recommendation</span>
+                                    <button 
+                                        onClick={() => setShowTrace(!showTrace)}
+                                        className="btn-action" 
+                                        style={{ fontSize: '0.65rem', padding: '2px 6px', textTransform: 'none' }}
+                                    >
+                                        {showTrace ? 'Hide Trace' : 'Trace Calculation'}
+                                    </button>
                                 </div>
-                                <div className="ai-insight-text">
+                                <div className="ai-insight-text" style={{ marginBottom: showTrace ? '12px' : '0' }}>
                                     {detail.ai_recommendation || 'All stress risk metrics indicate normal parameters.'}
                                 </div>
+                                
+                                {showTrace && detail.traceability && (
+                                    <div style={{
+                                        borderTop: '1px solid var(--border)',
+                                        paddingTop: '10px',
+                                        fontSize: '0.75rem',
+                                        color: 'var(--text-secondary)',
+                                        fontFamily: 'var(--font-mono)',
+                                        lineHeight: '1.4'
+                                    }}>
+                                        <div style={{ fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', fontSize: '0.7rem', color: 'var(--accent)' }}>
+                                            Calculation Trace Logs
+                                        </div>
+                                        <div>• Active Task Count: {detail.traceability.active_task_count}</div>
+                                        <div>• Committed Task Hours: {detail.traceability.active_task_hours} hrs</div>
+                                        <div>• Weekly Meeting Hours: {detail.traceability.meeting_hours} hrs</div>
+                                        <div>• Available Work Hours: {detail.traceability.available_hours} hrs</div>
+                                        <div>• Workload Utilization: ({detail.traceability.active_task_hours}h + {detail.traceability.meeting_hours}h) / {detail.traceability.available_hours}h = {detail.traceability.utilization_percent}%</div>
+                                        <div>• Workload Classification: {detail.traceability.workload_risk} (Low &lt; {detail.traceability.thresholds?.low}%, High &gt; {detail.traceability.thresholds?.high}%)</div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Stat Grid */}
@@ -216,12 +245,15 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                                     </div>
                                     
                                     <div style={{ width: '100%', borderTop: '1px solid var(--border)', paddingTop: '15px' }}>
-                                        <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', marginBottom: '10px', fontWeight: 600 }}>
+                                        <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 600 }}>
                                             Supplementary Skill Matrix
+                                        </div>
+                                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '10px', fontStyle: 'italic' }}>
+                                            Note: Supplementary skills are inferred based on department context.
                                         </div>
                                         <div className="skills-container">
                                             {detail.supplementary_skills.map((skill, index) => (
-                                                <span key={index} className="skill-tag">{skill}</span>
+                                                <span key={index} className="skill-tag" style={{ borderStyle: 'dashed', backgroundColor: 'var(--bg-primary)' }}>{skill} (Inferred)</span>
                                             ))}
                                         </div>
                                     </div>

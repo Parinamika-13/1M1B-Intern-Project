@@ -8,9 +8,22 @@ export default function Employees({ onViewDetails }) {
     const [risk, setRisk] = useState('');
     const [sortBy, setSortBy] = useState('employee_name');
     const [sortOrder, setSortOrder] = useState('asc');
+    const [departments, setDepartments] = useState([]);
     
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+
+    useEffect(() => {
+        const fetchDepts = async () => {
+            try {
+                const depts = await apiService.getDepartments();
+                setDepartments(depts);
+            } catch (err) {
+                console.warn('Failed to load departments dynamically:', err);
+            }
+        };
+        fetchDepts();
+    }, []);
 
     useEffect(() => {
         const fetchEmployees = async () => {
@@ -81,11 +94,9 @@ export default function Employees({ onViewDetails }) {
                     aria-label="Filter by department"
                 >
                     <option value="">All Departments</option>
-                    <option value="Engineering">Engineering</option>
-                    <option value="Design">Design</option>
-                    <option value="Product">Product</option>
-                    <option value="Marketing">Marketing</option>
-                    <option value="Data Science">Data Science</option>
+                    {departments.map(d => (
+                        <option key={d} value={d}>{d}</option>
+                    ))}
                 </select>
                 <select 
                     className="select-filter"

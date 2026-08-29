@@ -5,37 +5,100 @@ import StatCard from '../components/StatCard';
 export default function Dashboard({ currentRole, currentUser }) {
     const [managerData, setManagerData] = useState(null);
     const [employeeData, setEmployeeData] = useState(null);
-    const [aiInsights, setAiInsights] = useState([]);
     const [deptStats, setDeptStats] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
+    // ==================== STATE FOR DYNAMIC CONFIGS ====================
+    const [departments, setDepartments] = useState([]);
+    const [skills, setSkills] = useState([]);
+    const [aiConfig, setAiConfig] = useState({
+        WORKLOAD_THRESHOLD_LOW: 80,
+        WORKLOAD_THRESHOLD_HIGH: 110,
+        MEETING_OVERLOAD_PCT: 30,
+        DEADLINE_URGENCY_DAYS: 3,
+        PROGRESS_RISK_THRESHOLD: 50
+    });
+
+    // ==================== STATE FOR AI AGENTS ====================
+    // Agent 2: Task Assignment Recommendations
+    const [taskSkill, setTaskSkill] = useState('');
+    const [taskHours, setTaskHours] = useState(8);
+    const [taskPriority, setTaskPriority] = useState('High');
+    const [taskDeadline, setTaskDeadline] = useState(5);
+    const [allocatorResults, setAllocatorResults] = useState([]);
+    const [allocatorLoading, setAllocatorLoading] = useState(false);
+    const [showAllocatorTrace, setShowAllocatorTrace] = useState(false);
+
+    // Agent 3: Weekly Progress Summary
+    const [summaryDept, setSummaryDept] = useState('');
+    const [weeklySummary, setWeeklySummary] = useState(null);
+    const [summaryLoading, setSummaryLoading] = useState(false);
+    const [showSummaryTrace, setShowSummaryTrace] = useState(false);
+
+    // Agent 4: Early Warnings / Overload Alerts
+    const [earlyWarnings, setEarlyWarnings] = useState(null);
+    const [showWarningTrace, setShowWarningTrace] = useState(false);
+
+    // Agent 5: Employee AI recommendation
+    const [employeeAiRecommend, setEmployeeAiRecommend] = useState('');
+    const [employeeAiTrace, setEmployeeAiTrace] = useState(null);
+    const [showEmployeeAiTrace, setShowEmployeeAiTrace] = useState(false);
+
+    // Fetch initial data
     useEffect(() => {
         const fetchDashboardData = async () => {
             setLoading(true);
             try {
                 if (currentRole === 'manager') {
+                    // Fetch dynamic config, departments, and skills first (Requirement 3 & 4)
+                    try {
+                        const conf = await apiService.getAiConfig();
+                        setAiConfig(conf);
+                    } catch (e) {
+                        console.warn('Could not load AI config:', e);
+                    }
+
+                    try {
+                        const depts = await apiService.getDepartments();
+                        setDepartments(depts);
+                    } catch (e) {
+                        console.warn('Could not load departments:', e);
+                    }
+
+                    let initialSkill = 'System Design';
+                    try {
+                        const sks = await apiService.getSkills();
+                        setSkills(sks);
+                        if (sks.length > 0) {
+                            setTaskSkill(sks[0]);
+                            initialSkill = sks[0];
+                        }
+                    } catch (e) {
+                        console.warn('Could not load skills:', e);
+                    }
+
                     // Fetch manager summary stats
                     const stats = await apiService.getStats();
                     setManagerData(stats);
 
                     // Fetch all employees to calculate department statistics dynamically
                     const employees = await apiService.getEmployees();
-                    const departments = {};
+                    const deptsGroup = {};
                     
                     employees.forEach(emp => {
                         const d = emp.department;
-                        if (!departments[d]) {
-                            departments[d] = { count: 0, sumWorkload: 0, completed: 0, total: 0 };
+                        if (!deptsGroup[d]) {
+                            deptsGroup[d] = { count: 0, sumWorkload: 0, completed: 0, total: 0 };
                         }
-                        departments[d].count += 1;
-                        departments[d].sumWorkload += emp.utilization_percent;
-                        departments[d].completed += emp.completed_tasks;
-                        departments[d].total += emp.total_tasks;
+                        deptsGroup[d].count += 1;
+                        deptsGroup[d].sumWorkload += emp.utilization_percent;
+                        deptsGroup[d].completed += emp.completed_tasks;
+                        deptsGroup[d].total += emp.total_tasks;
                     });
 
-                    const computedDeptStats = Object.keys(departments).map(dept => {
-                        const data = departments[dept];
+                    const computedDeptStats = Object.keys(deptsGroup).map(dept => {
+                        const data = deptsGroup[dept];
                         return {
                             name: dept,
                             headcount: data.count,
@@ -45,13 +108,25 @@ export default function Dashboard({ currentRole, currentUser }) {
                     });
                     setDeptStats(computedDeptStats);
 
-                    // Fetch AI insights
-                    const insights = await apiService.getAIInsights();
-                    setAiInsights(insights);
+                    // Fetch Agent 3 Weekly Progress Summary (initially organization-wide)
+                    const summary = await apiService.getWeeklySummary('');
+                    setWeeklySummary(summary);
+
+                    // Fetch Agent 4 Early Warning alerts
+                    const warnings = await apiService.getEarlyWarnings();
+                    setEarlyWarnings(warnings);
+
+                    // Run initial dynamic assignment query
+                    triggerAssignmentQuery(initialSkill, 8, 'High', 5);
                 } else if (currentUser) {
                     // Fetch individual employee dashboard data
                     const dashboard = await apiService.getEmployeeDashboard(currentUser.employee_id);
                     setEmployeeData(dashboard);
+
+                    // Fetch Agent 5 prioritization recommendation
+                    const aiResult = await apiService.askEmployeeAssistant(currentUser.employee_id, 'What should I prioritize today?');
+                    setEmployeeAiRecommend(aiResult.response);
+                    setEmployeeAiTrace(aiResult.traceability);
                 }
             } catch (err) {
                 console.error(err);
@@ -63,6 +138,43 @@ export default function Dashboard({ currentRole, currentUser }) {
 
         fetchDashboardData();
     }, [currentRole, currentUser]);
+
+    // Handle department change for Agent 3 Weekly Summary
+    const handleDeptSummaryChange = async (dept) => {
+        setSummaryDept(dept);
+        setSummaryLoading(true);
+        try {
+            const summary = await apiService.getWeeklySummary(dept);
+            setWeeklySummary(summary);
+        } catch (e) {
+            console.error('Failed to update weekly summary:', e);
+        } finally {
+            setSummaryLoading(false);
+        }
+    };
+
+    // Trigger Agent 2 task allocator query
+    const triggerAssignmentQuery = async (skill, hours, priority, deadline) => {
+        setAllocatorLoading(true);
+        try {
+            const results = await apiService.getTaskAssignmentRecommendations({
+                required_skill: skill,
+                estimated_hours: hours,
+                priority: priority,
+                deadline_days: deadline
+            });
+            setAllocatorResults(results);
+        } catch (e) {
+            console.error('Task assignment allocation failed:', e);
+        } finally {
+            setAllocatorLoading(false);
+        }
+    };
+
+    const handleAllocatorSubmit = (e) => {
+        e.preventDefault();
+        triggerAssignmentQuery(taskSkill, taskHours, taskPriority, taskDeadline);
+    };
 
     const handleToggleTask = async (taskId) => {
         try {
@@ -88,6 +200,13 @@ export default function Dashboard({ currentRole, currentUser }) {
                         completion_rate_percent: result.employee_updated_completion_rate
                     };
                 });
+
+                // Refresh AI recommendations (priorities change when task status updates!)
+                if (currentUser) {
+                    const aiResult = await apiService.askEmployeeAssistant(currentUser.employee_id, 'What should I prioritize today?');
+                    setEmployeeAiRecommend(aiResult.response);
+                    setEmployeeAiTrace(aiResult.traceability);
+                }
             }
         } catch (err) {
             console.error(err);
@@ -126,12 +245,11 @@ export default function Dashboard({ currentRole, currentUser }) {
         const pMed = Math.round((medCount / employees_count) * 100);
         const pHigh = Math.round((highCount / employees_count) * 100);
 
-        // Dynamic Fulcrum Tilt Angle: High (rust/danger) vs Low+Med (balanced/sage)
+        // Dynamic Fulcrum Tilt Angle
         const totalWeight = lowCount + medCount + highCount;
         const balancedWeight = lowCount + medCount;
         const weightDifference = highCount - balancedWeight;
         const rawTilt = (weightDifference / totalWeight) * 60;
-        // Cap angle between -15deg (tilted heavily to balanced/left) and +15deg (tilted to risk/right)
         const tiltAngle = Math.max(-15, Math.min(15, rawTilt));
 
         return (
@@ -167,25 +285,21 @@ export default function Dashboard({ currentRole, currentUser }) {
                 </div>
 
                 <div className="dashboard-row">
-                    {/* Left Column: Balance Beam and Department Table */}
+                    {/* Left Column: Balance Beam, Task Allocator Form, and Department Table */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                         
-                        {/* Workload Balance Beam (Signature visual element) */}
+                        {/* Workload Balance Beam */}
                         <div className="balance-beam-wrapper">
                             <h3 className="panel-title" style={{ alignSelf: 'flex-start' }}>
                                 <i className="fa-solid fa-scale-balanced"></i> Workload Balance Beam
                             </h3>
                             
                             <div className="fulcrum-beam-system">
-                                {/* Triangular fulcrum stand in center */}
                                 <div className="beam-fulcrum"></div>
-                                
-                                {/* Rotating beam lever */}
                                 <div className="beam-lever-container" style={{ transform: `rotate(${tiltAngle}deg)` }}>
                                     <div className="beam-line-bar"></div>
                                     <div className="beam-pivot-pin"></div>
                                     
-                                    {/* Left Tray: Balanced (sage green accent) */}
                                     <div className="beam-tray-left" style={{ transform: `rotate(${-tiltAngle}deg)` }}>
                                         <div className="tray-suspension-wire"></div>
                                         <div className="weight-plate" style={{ borderTop: '4px solid var(--success)' }}>
@@ -195,7 +309,6 @@ export default function Dashboard({ currentRole, currentUser }) {
                                         </div>
                                     </div>
                                     
-                                    {/* Right Tray: Overloaded (rust red accent) */}
                                     <div className="beam-tray-right" style={{ transform: `rotate(${-tiltAngle}deg)` }}>
                                         <div className="tray-suspension-wire"></div>
                                         <div className="weight-plate" style={{ borderTop: '4px solid var(--danger)' }}>
@@ -207,7 +320,6 @@ export default function Dashboard({ currentRole, currentUser }) {
                                 </div>
                             </div>
                             
-                            {/* Unified Legend with counts & percent */}
                             <div className="beam-legend-breakdown">
                                 <div className="legend-stat-block">
                                     <div className="legend-stat-label">
@@ -230,6 +342,143 @@ export default function Dashboard({ currentRole, currentUser }) {
                                     </div>
                                     <div className="legend-stat-value font-mono">{highCount} ({pHigh}%)</div>
                                 </div>
+                            </div>
+                        </div>
+
+                        {/* Agent 2: AI Task Allocator Engine */}
+                        <div className="panel-card">
+                            <h3 className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                                <span><i className="fa-solid fa-wand-magic-sparkles"></i> AI Task Assignment Allocator</span>
+                                <button 
+                                    onClick={() => setShowAllocatorTrace(!showAllocatorTrace)}
+                                    className="btn-action" 
+                                    style={{ fontSize: '0.65rem', padding: '2px 6px', textTransform: 'none' }}
+                                >
+                                    {showAllocatorTrace ? 'Hide Formula' : 'Show Match Formula'}
+                                </button>
+                            </h3>
+                            
+                            {showAllocatorTrace && (
+                                <div style={{
+                                    backgroundColor: 'var(--bg-primary)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: 'var(--radius-md)',
+                                    padding: '12px',
+                                    marginBottom: '16px',
+                                    fontSize: '0.75rem',
+                                    fontFamily: 'var(--font-mono)',
+                                    lineHeight: '1.4',
+                                    color: 'var(--text-secondary)'
+                                }}>
+                                    <div style={{ fontWeight: 600, color: 'var(--accent)', marginBottom: '4px' }}>RANKING FUNCTION MATRICES:</div>
+                                    <div>• Required Skill Match = +1000 base points (primary/departmental match verification).</div>
+                                    <div>• Capacity Availability Score = (100 - utilization %) * 2.</div>
+                                    <div>• High-Workload Burnout Penalty = -500 points (assigned if current utilization &gt; {aiConfig.WORKLOAD_THRESHOLD_HIGH}%).</div>
+                                </div>
+                            )}
+
+                            <form onSubmit={handleAllocatorSubmit} style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                                gap: '12px',
+                                marginBottom: '20px',
+                                backgroundColor: 'var(--bg-primary)',
+                                padding: '16px',
+                                borderRadius: 'var(--radius-md)',
+                                border: '1px solid var(--border)'
+                            }}>
+                                <div className="form-group" style={{ margin: 0 }}>
+                                    <label className="form-label" style={{ fontSize: '0.65rem' }}>Skill Requirement</label>
+                                    <select 
+                                        className="select-filter" 
+                                        style={{ width: '100%', minWidth: 0 }}
+                                        value={taskSkill} 
+                                        onChange={(e) => setTaskSkill(e.target.value)}
+                                    >
+                                        {skills.map(sk => (
+                                            <option key={sk} value={sk}>{sk}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="form-group" style={{ margin: 0 }}>
+                                    <label className="form-label" style={{ fontSize: '0.65rem' }}>Est. Hours</label>
+                                    <input 
+                                        type="number" 
+                                        className="input-control" 
+                                        value={taskHours} 
+                                        min="1" 
+                                        max="40"
+                                        onChange={(e) => setTaskHours(parseInt(e.target.value) || 8)}
+                                    />
+                                </div>
+                                <div className="form-group" style={{ margin: 0 }}>
+                                    <label className="form-label" style={{ fontSize: '0.65rem' }}>Priority</label>
+                                    <select 
+                                        className="select-filter" 
+                                        style={{ width: '100%', minWidth: 0 }}
+                                        value={taskPriority} 
+                                        onChange={(e) => setTaskPriority(e.target.value)}
+                                    >
+                                        <option value="High">High</option>
+                                        <option value="Medium">Medium</option>
+                                        <option value="Low">Low</option>
+                                    </select>
+                                </div>
+                                <div className="form-group" style={{ margin: 0 }}>
+                                    <label className="form-label" style={{ fontSize: '0.65rem' }}>Deadline Days</label>
+                                    <input 
+                                        type="number" 
+                                        className="input-control" 
+                                        value={taskDeadline} 
+                                        min="1" 
+                                        max="30"
+                                        onChange={(e) => setTaskDeadline(parseInt(e.target.value) || 5)}
+                                    />
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                                    <button type="submit" className="btn-primary" style={{ height: '40px', padding: '0' }} disabled={allocatorLoading}>
+                                        {allocatorLoading ? 'Sorting...' : 'Assign'}
+                                    </button>
+                                </div>
+                            </form>
+
+                            {/* Ranked results list */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {allocatorResults.map((candidate, idx) => (
+                                    <div key={candidate.employee_id} style={{
+                                        border: '1px solid var(--border)',
+                                        borderRadius: 'var(--radius-md)',
+                                        padding: '12px 16px',
+                                        backgroundColor: candidate.has_skill ? 'var(--bg-primary)' : 'rgba(0,0,0,0.02)',
+                                        opacity: candidate.has_skill ? 1 : 0.7
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap', gap: '8px' }}>
+                                            <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+                                                {idx + 1}. {candidate.employee_name} ({candidate.role} • {candidate.department})
+                                            </span>
+                                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                <span 
+                                                    className="badge" 
+                                                    style={{ 
+                                                        fontSize: '0.65rem', 
+                                                        padding: '2px 6px',
+                                                        backgroundColor: candidate.match_type === 'Primary Skill Match' ? 'rgba(79, 122, 92, 0.1)' : 'rgba(185, 130, 47, 0.1)',
+                                                        color: candidate.match_type === 'Primary Skill Match' ? 'var(--success)' : 'var(--warning)',
+                                                        border: `1px solid ${candidate.match_type === 'Primary Skill Match' ? 'var(--success)' : 'var(--warning)'}`
+                                                    }}
+                                                >
+                                                    {candidate.match_type === 'Primary Skill Match' ? 'Primary Skill' : 'Inferred from Dept'}
+                                                </span>
+                                                <span className="font-mono" style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--accent)' }}>
+                                                    Score: {candidate.suitability_score} pts
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                            {candidate.reasoning}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
 
@@ -257,8 +506,8 @@ export default function Dashboard({ currentRole, currentUser }) {
                                                         <div 
                                                             className="progress-bar" 
                                                             style={{ 
-                                                                backgroundColor: dept.avgWorkload > 110 ? 'var(--danger)' : 
-                                                                                   dept.avgWorkload >= 80 ? 'var(--warning)' : 'var(--success)', 
+                                                                backgroundColor: dept.avgWorkload > aiConfig.WORKLOAD_THRESHOLD_HIGH ? 'var(--danger)' : 
+                                                                                   dept.avgWorkload >= aiConfig.WORKLOAD_THRESHOLD_LOW ? 'var(--warning)' : 'var(--success)', 
                                                                 width: `${Math.min(dept.avgWorkload, 100)}%` 
                                                             }}
                                                         ></div>
@@ -278,9 +527,148 @@ export default function Dashboard({ currentRole, currentUser }) {
                         </div>
                     </div>
 
-                    {/* Right Column: Progress KPIs & AI Insights */}
+                    {/* Right Column: Weekly Summary, Early Warnings, KPIs */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                         
+                        {/* Agent 3: Weekly Progress Summary */}
+                        <div className="panel-card">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '6px' }}>
+                                <h3 className="panel-title" style={{ margin: 0 }}><i className="fa-solid fa-chart-line"></i> Progress Summary</h3>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                    <button 
+                                        onClick={() => setShowSummaryTrace(!showSummaryTrace)}
+                                        className="btn-action" 
+                                        style={{ fontSize: '0.65rem', padding: '4px 8px', textTransform: 'none' }}
+                                    >
+                                        {showSummaryTrace ? 'Hide Trace' : 'Trace Logs'}
+                                    </button>
+                                    <select 
+                                        className="select-filter" 
+                                        style={{ padding: '4px 8px', fontSize: '0.75rem', minWidth: '110px' }}
+                                        value={summaryDept}
+                                        onChange={(e) => handleDeptSummaryChange(e.target.value)}
+                                    >
+                                        <option value="">All Teams</option>
+                                        {departments.map(d => (
+                                            <option key={d} value={d}>{d}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {summaryLoading ? (
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Regenerating summary aggregates...</div>
+                            ) : weeklySummary ? (
+                                <>
+                                    <div style={{ fontSize: '0.825rem', color: 'var(--text-primary)', lineHeight: '1.6', backgroundColor: 'var(--bg-primary)', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                                        {weeklySummary.summary}
+                                    </div>
+                                    
+                                    {showSummaryTrace && weeklySummary.traceability && (
+                                        <div style={{
+                                            borderTop: '1px solid var(--border)',
+                                            paddingTop: '10px',
+                                            marginTop: '10px',
+                                            fontSize: '0.7rem',
+                                            color: 'var(--text-secondary)',
+                                            fontFamily: 'var(--font-mono)',
+                                            lineHeight: '1.4'
+                                        }}>
+                                            <div style={{ fontWeight: 'bold', color: 'var(--accent)', marginBottom: '4px' }}>DATABASE SNAPSHOT INPUT TRACE:</div>
+                                            <div>• Target Department: {weeklySummary.traceability.department || 'Organization-wide'}</div>
+                                            <div>• Tasks Completion: {weeklySummary.traceability.completed_tasks} completed / {weeklySummary.traceability.total_tasks} total ({weeklySummary.traceability.completion_rate_percent}%)</div>
+                                            <div>• Active / Overdue Tasks: {weeklySummary.traceability.in_progress_tasks} in-progress / {weeklySummary.traceability.overdue_tasks} overdue</div>
+                                            <div>• Workload Risks: {weeklySummary.traceability.high_risk_count} High / {weeklySummary.traceability.medium_risk_count} Medium / {weeklySummary.traceability.low_risk_count} Low</div>
+                                            <div>• Total Meeting Commitment: {weeklySummary.traceability.total_meeting_hours} hours</div>
+                                            <div>• Trend Status: {weeklySummary.traceability.trend_analysis_status}</div>
+                                        </div>
+                                    )}
+                                </>
+                            ) : null}
+                        </div>
+
+                        {/* Agent 4: Early Warnings Alerts Panel */}
+                        <div className="panel-card">
+                            <h3 className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                                <span><i className="fa-solid fa-triangle-exclamation"></i> Early-Warning Alerts</span>
+                                <button 
+                                    onClick={() => setShowWarningTrace(!showWarningTrace)}
+                                    className="btn-action" 
+                                    style={{ fontSize: '0.65rem', padding: '2px 6px', textTransform: 'none' }}
+                                >
+                                    {showWarningTrace ? 'Hide Thresholds' : 'Show Rules'}
+                                </button>
+                            </h3>
+
+                            {showWarningTrace && earlyWarnings && (
+                                <div style={{
+                                    backgroundColor: 'var(--bg-primary)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: 'var(--radius-md)',
+                                    padding: '10px',
+                                    marginBottom: '12px',
+                                    fontSize: '0.7rem',
+                                    fontFamily: 'var(--font-mono)',
+                                    lineHeight: '1.4',
+                                    color: 'var(--text-secondary)'
+                                }}>
+                                    <div style={{ fontWeight: 600, color: 'var(--accent)', marginBottom: '4px' }}>ALERT THRESHOLDS RUNNING:</div>
+                                    <div>1. High Workload: utilization &gt; {aiConfig.WORKLOAD_THRESHOLD_HIGH}%</div>
+                                    <div>2. Deadline Risk: task progress &lt; {aiConfig.PROGRESS_RISK_THRESHOLD}% and remaining days &lt;= {aiConfig.DEADLINE_URGENCY_DAYS}d</div>
+                                    <div>3. Meeting Overload: meeting hours &gt; {aiConfig.MEETING_OVERLOAD_PCT}% available work hours</div>
+                                    <div>4. Available Buffer: utilization &lt; {aiConfig.WORKLOAD_THRESHOLD_LOW}%</div>
+                                </div>
+                            )}
+
+                            {earlyWarnings ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                    {/* High Workload Alerts */}
+                                    {earlyWarnings.high_workload.length > 0 && (
+                                        <div>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--danger)', textTransform: 'uppercase', marginBottom: '4px', fontFamily: 'var(--font-mono)' }}>
+                                                High Workload Risk ({earlyWarnings.high_workload.length})
+                                            </div>
+                                            {earlyWarnings.high_workload.slice(0, 3).map(alert => (
+                                                <div key={alert.employee_id} style={{ fontSize: '0.8rem', padding: '6px 10px', borderLeft: '3px solid var(--danger)', backgroundColor: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', marginBottom: '4px' }}>
+                                                    <strong>{alert.employee_name}</strong>: {alert.description}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Deadline Risks */}
+                                    {earlyWarnings.deadline_risk.length > 0 && (
+                                        <div>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--warning)', textTransform: 'uppercase', marginBottom: '4px', fontFamily: 'var(--font-mono)' }}>
+                                                Task Deadline Risk ({earlyWarnings.deadline_risk.length})
+                                            </div>
+                                            {earlyWarnings.deadline_risk.slice(0, 3).map(alert => (
+                                                <div key={alert.employee_id} style={{ fontSize: '0.8rem', padding: '6px 10px', borderLeft: '3px solid var(--warning)', backgroundColor: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', marginBottom: '4px' }}>
+                                                    <strong>{alert.employee_name}</strong>: {alert.description}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Meeting Overloads */}
+                                    {earlyWarnings.meeting_overload.length > 0 && (
+                                        <div>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--info)', textTransform: 'uppercase', marginBottom: '4px', fontFamily: 'var(--font-mono)' }}>
+                                                Meeting Fatigue Overload ({earlyWarnings.meeting_overload.length})
+                                            </div>
+                                            {earlyWarnings.meeting_overload.slice(0, 3).map(alert => (
+                                                <div key={alert.employee_id} style={{ fontSize: '0.8rem', padding: '6px 10px', borderLeft: '3px solid var(--info)', backgroundColor: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', marginBottom: '4px' }}>
+                                                    <strong>{alert.employee_name}</strong>: {alert.description}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Scanning database records...</div>
+                            )}
+                        </div>
+
                         {/* KPIs list */}
                         <div className="panel-card">
                             <h3 className="panel-title"><i className="fa-solid fa-star"></i> Team Progress KPIs</h3>
@@ -314,25 +702,6 @@ export default function Dashboard({ currentRole, currentUser }) {
                                 </div>
                             </div>
                         </div>
-
-                        {/* AI Insight Bullet Points */}
-                        <div className="panel-card">
-                            <h3 className="panel-title"><i className="fa-solid fa-wand-magic-sparkles"></i> AI Insights</h3>
-                            {aiInsights.map((insight, i) => (
-                                <div key={i} className="ai-insight-box">
-                                    <div className="ai-insight-header">
-                                        <i className={`fa-solid ${
-                                            insight.type === 'warning' ? 'fa-triangle-exclamation' :
-                                            insight.type === 'alert' ? 'fa-bell' : 'fa-info-circle'
-                                        }`}></i>
-                                        {insight.type}
-                                    </div>
-                                    <div className="ai-insight-text">
-                                        {insight.text}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
                     </div>
                 </div>
             </div>
@@ -342,11 +711,9 @@ export default function Dashboard({ currentRole, currentUser }) {
     // ==================== RENDER EMPLOYEE PORTAL ====================
     if (currentRole === 'employee' && employeeData) {
         const {
-            employee_name,
             utilization_percent,
             workload_risk,
             completed_tasks,
-            total_tasks,
             in_progress_tasks,
             overdue_tasks,
             completion_rate_percent,
@@ -377,7 +744,6 @@ export default function Dashboard({ currentRole, currentUser }) {
         };
 
         const workloadTheme = getWorkloadTheme();
-        const activeTasks = tasks.filter(t => t.status !== 'Completed' && t.status !== 'Done');
 
         const getPriorityClass = (priority) => {
             if (priority === 'High') return 'priority-high';
@@ -504,14 +870,41 @@ export default function Dashboard({ currentRole, currentUser }) {
                             </div>
                         </div>
 
-                        {/* AI Box */}
+                        {/* Agent 5 prioritizer results */}
                         <div className="ai-insight-box">
-                            <div className="ai-insight-header">
-                                <i className="fa-solid fa-wand-magic-sparkles"></i> AI Copilot recommendations
+                            <div className="ai-insight-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span><i className="fa-solid fa-wand-magic-sparkles"></i> AI Prioritization Assistant</span>
+                                {employeeAiTrace && (
+                                    <button 
+                                        onClick={() => setShowEmployeeAiTrace(!showEmployeeAiTrace)}
+                                        className="btn-action" 
+                                        style={{ fontSize: '0.65rem', padding: '2px 6px', textTransform: 'none' }}
+                                    >
+                                        {showEmployeeAiTrace ? 'Hide Trace' : 'Trace Calculation'}
+                                    </button>
+                                )}
                             </div>
-                            <div className="ai-insight-text">
-                                Focus block scheduled between 1:00 PM and 3:00 PM. High-priority tasks (e.g. Optimize Database Indices) should be tackled during this window.
+                            <div className="ai-insight-text" style={{ marginBottom: showEmployeeAiTrace ? '10px' : '0' }}>
+                                {employeeAiRecommend || 'Calculating priorities...'}
                             </div>
+
+                            {showEmployeeAiTrace && employeeAiTrace && (
+                                <div style={{
+                                    borderTop: '1px solid var(--border)',
+                                    paddingTop: '8px',
+                                    fontSize: '0.7rem',
+                                    fontFamily: 'var(--font-mono)',
+                                    color: 'var(--text-secondary)',
+                                    lineHeight: '1.4'
+                                }}>
+                                    <div style={{ fontWeight: 'bold', color: 'var(--accent)', marginBottom: '2px' }}>SCORING TRACE LOGS:</div>
+                                    <div>• Formula: {employeeAiTrace.formula}</div>
+                                    <div>• Total Priority Score: {employeeAiTrace.score.toFixed(1)} pts</div>
+                                    <div>• Priority Factor Weight: {employeeAiTrace.breakdown.priority_component.toFixed(1)} pts</div>
+                                    <div>• Deadline Urgency Factor: {employeeAiTrace.breakdown.deadline_component.toFixed(1)} pts</div>
+                                    <div>• Complexity Factor Weight: {employeeAiTrace.breakdown.complexity_component.toFixed(1)} pts</div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
