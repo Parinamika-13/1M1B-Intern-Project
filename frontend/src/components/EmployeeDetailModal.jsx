@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiService } from '../services/api';
 
 export default function EmployeeDetailModal({ employeeId, onClose }) {
     const [detail, setDetail] = useState(null);
@@ -12,9 +13,7 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
         const fetchDetails = async () => {
             setLoading(true);
             try {
-                const response = await fetch(`http://localhost:5000/api/employees/${employeeId}`);
-                if (!response.ok) throw new Error('Employee details not found');
-                const data = await response.json();
+                const data = await apiService.getEmployeeDetails(employeeId);
                 setDetail(data);
             } catch (err) {
                 console.error(err);
@@ -41,30 +40,38 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
         return 'priority-low';
     };
 
+    const getRiskClass = (risk) => {
+        if (risk === 'High') return 'badge-high';
+        if (risk === 'Medium') return 'badge-medium';
+        return 'badge-low';
+    };
+
     return (
         <>
             <div className={`modal-backdrop ${employeeId ? 'show' : ''}`} onClick={onClose}></div>
             <div className={`detail-modal ${employeeId ? 'open' : ''}`}>
-                <button className="btn-close-modal" onClick={onClose}>&times;</button>
+                <button className="btn-close-modal" onClick={onClose} aria-label="Close panel">&times;</button>
                 
                 {loading ? (
-                    <div style={{ color: 'var(--text-muted)', padding: '40px', textAlign: 'center' }}>
+                    <div style={{ color: 'var(--text-secondary)', padding: '40px', textAlign: 'center', fontSize: '0.875rem' }}>
                         Loading profile details...
                     </div>
                 ) : error ? (
-                    <div style={{ color: 'var(--color-high)', padding: '40px', textAlign: 'center' }}>
+                    <div style={{ color: 'var(--danger)', padding: '40px', textAlign: 'center', fontSize: '0.875rem' }}>
                         {error}
                     </div>
                 ) : (
                     <>
                         <div className="detail-header">
                             <div className="detail-title-block">
-                                <div className="avatar" style={{ width: '50px', height: '50px', fontSize: '1.2rem' }}>
+                                <div className="avatar" style={{ width: '46px', height: '46px', fontSize: '1.1rem' }}>
                                     {getInitials(detail.employee_name)}
                                 </div>
                                 <div>
-                                    <h2 className="text-outfit" style={{ lineHeight: 1.1 }}>{detail.employee_name}</h2>
-                                    <div className="detail-meta">{detail.role} • {detail.department}</div>
+                                    <h2 className="text-heading" style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                        {detail.employee_name}
+                                    </h2>
+                                    <div className="profile-role">{detail.role} • {detail.department}</div>
                                 </div>
                             </div>
                         </div>
@@ -73,10 +80,10 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                             {/* AI recommendation box */}
                             <div className="ai-insight-box">
                                 <div className="ai-insight-header">
-                                    <i className="fa-solid fa-wand-magic-sparkles"></i> AI Workload Insight
+                                    <i className="fa-solid fa-wand-magic-sparkles"></i> AI Workload Recommendation
                                 </div>
                                 <div className="ai-insight-text">
-                                    {detail.ai_recommendation || 'Balanced workload thresholds.'}
+                                    {detail.ai_recommendation || 'All stress risk metrics indicate normal parameters.'}
                                 </div>
                             </div>
 
@@ -84,15 +91,22 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                             <div className="detail-stat-grid">
                                 <div className="detail-stat-card">
                                     <div className="detail-stat-label">Workload</div>
-                                    <div className="detail-stat-value">{Math.round(detail.utilization_percent)}%</div>
+                                    <div className="detail-stat-value" style={{ 
+                                        color: detail.workload_risk === 'High' ? 'var(--danger)' : 
+                                               detail.workload_risk === 'Medium' ? 'var(--warning)' : 'var(--success)'
+                                    }}>
+                                        {Math.round(detail.utilization_percent)}%
+                                    </div>
                                 </div>
                                 <div className="detail-stat-card">
-                                    <div className="detail-stat-label">Tasks Completed</div>
-                                    <div className="detail-stat-value">{detail.completed_tasks} / {detail.total_tasks}</div>
+                                    <div className="detail-stat-label">Task Status</div>
+                                    <div className="detail-stat-value" style={{ color: 'var(--text-primary)' }}>
+                                        {detail.completed_tasks} / {detail.total_tasks}
+                                    </div>
                                 </div>
                                 <div className="detail-stat-card">
                                     <div className="detail-stat-label">Satisfaction</div>
-                                    <div className="detail-stat-value" style={{ color: 'var(--color-low)' }}>
+                                    <div className="detail-stat-value" style={{ color: 'var(--accent)' }}>
                                         {detail.employee_satisfaction_score.toFixed(1)}/10
                                     </div>
                                 </div>
@@ -122,7 +136,7 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                                     className={`tab-btn ${activeTab === 'progress' ? 'active' : ''}`}
                                     onClick={() => setActiveTab('progress')}
                                 >
-                                    Progress
+                                    Metrics
                                 </button>
                             </div>
 
@@ -131,7 +145,7 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                                 <div className="tab-pane">
                                     <div className="checklist-container">
                                         {detail.tasks.length === 0 ? (
-                                            <div style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '20px 0' }}>
+                                            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px 0', fontSize: '0.85rem' }}>
                                                 No tasks currently assigned.
                                             </div>
                                         ) : (
@@ -146,10 +160,10 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                                                                 <span className={`priority-pill ${getPriorityClass(task.priority)}`}>
                                                                     {task.priority}
                                                                 </span>
-                                                                <span>Complexity: <strong style={{ color: 'var(--text-main)' }}>{task.task_complexity}</strong></span>
-                                                                <span>Est: <strong>{task.estimated_hours || 8} hrs</strong></span>
-                                                                <span style={{ color: task.deadline_days_remaining <= 2 ? 'var(--color-high)' : 'var(--text-muted)' }}>
-                                                                    {task.deadline_days_remaining} days left
+                                                                <span>Complexity: <strong>{task.task_complexity}</strong></span>
+                                                                <span>Est: <strong>{task.estimated_hours || 8}h</strong></span>
+                                                                <span style={{ color: task.deadline_days_remaining <= 2 ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                                                                    {task.deadline_days_remaining}d remaining
                                                                 </span>
                                                             </div>
                                                         </div>
@@ -165,7 +179,7 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                                 <div className="tab-pane">
                                     <div className="timeline">
                                         {detail.meetings.length === 0 ? (
-                                            <div style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '20px 0' }}>
+                                            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px 0', fontSize: '0.85rem' }}>
                                                 No scheduled meetings.
                                             </div>
                                         ) : (
@@ -177,7 +191,7 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                                                         <div className="timeline-time">{timeStr}</div>
                                                         <div className="timeline-title">{meeting.meeting_title}</div>
                                                         <div className="timeline-desc">
-                                                            {meeting.duration_minutes} minutes • {meeting.attendance_type} ({meeting.meeting_status})
+                                                            {meeting.duration_minutes}m • {meeting.attendance_type} ({meeting.meeting_status})
                                                         </div>
                                                     </div>
                                                 );
@@ -190,19 +204,19 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                             {activeTab === 'skills' && (
                                 <div className="tab-pane">
                                     <div style={{ width: '100%', marginBottom: '15px' }}>
-                                        <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '6px' }}>
+                                        <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>
                                             Primary Skill Focus
                                         </div>
-                                        <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <i className="fa-solid fa-certificate"></i> {detail.primary_skill}
-                                            <span className="badge" style={{ backgroundColor: 'rgba(59, 130, 246, 0.12)', color: 'var(--accent-blue)', border: '1px solid rgba(59,130,246,0.2)' }}>
+                                            <span className="badge" style={{ backgroundColor: 'var(--accent-glow)', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
                                                 {detail.skill_level}
                                             </span>
                                         </div>
                                     </div>
                                     
-                                    <div style={{ width: '100%', borderTop: '1px solid var(--border-color)', paddingTop: '15px' }}>
-                                        <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '10px' }}>
+                                    <div style={{ width: '100%', borderTop: '1px solid var(--border)', paddingTop: '15px' }}>
+                                        <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', marginBottom: '10px', fontWeight: 600 }}>
                                             Supplementary Skill Matrix
                                         </div>
                                         <div className="skills-container">
@@ -217,36 +231,36 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                             {activeTab === 'progress' && (
                                 <div className="tab-pane">
                                     <div style={{ marginBottom: '20px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                                            <span>Tasks Completion Rate</span>
-                                            <span>{Math.round(detail.completion_rate_percent)}%</span>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                                            <span>Task Completion Rate</span>
+                                            <span style={{ fontWeight: 600 }}>{Math.round(detail.completion_rate_percent)}%</span>
                                         </div>
                                         <div className="progress-track">
                                             <div 
                                                 className="progress-bar" 
-                                                style={{ backgroundColor: 'var(--accent-blue)', width: `${detail.completion_rate_percent}%` }}
+                                                style={{ backgroundColor: 'var(--accent)', width: `${detail.completion_rate_percent}%` }}
                                             ></div>
                                         </div>
                                     </div>
                                     
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', flexParagraph: 'column', gap: '12px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
                                             <span>Overdue Tasks:</span>
-                                            <span style={{ fontWeight: 600, color: 'var(--color-high)' }}>{detail.overdue_tasks}</span>
+                                            <span style={{ fontWeight: 600, color: 'var(--danger)' }}>{detail.overdue_tasks}</span>
                                         </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
                                             <span>Pending Tasks:</span>
-                                            <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>
+                                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                                                 {detail.pending_tasks + detail.in_progress_tasks}
                                             </span>
                                         </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
                                             <span>Weekly Meeting Hours:</span>
-                                            <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{detail.meeting_hours.toFixed(1)} hrs</span>
+                                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{detail.meeting_hours.toFixed(1)} hrs</span>
                                         </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <span>Leave Days This Month:</span>
-                                            <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{detail.leave_days_this_month} days</span>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '4px' }}>
+                                            <span>Leaves Taken (Month):</span>
+                                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{detail.leave_days_this_month} days</span>
                                         </div>
                                     </div>
                                 </div>

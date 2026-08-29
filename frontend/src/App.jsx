@@ -1,27 +1,55 @@
-import React, { useState } from 'react';
-import Login from './components/Login';
-import Sidebar from './components/Sidebar';
+import React, { useState, useEffect } from 'react';
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+import Employees from './pages/Employees';
+import Profile from './pages/Profile';
+import ResponsibleAiPage from './pages/ResponsibleAiPage';
+import PlaceholderViewPage from './pages/PlaceholderViewPage';
 import Header from './components/Header';
-import ManagerDashboard from './components/ManagerDashboard';
-import EmployeeList from './components/EmployeeList';
 import EmployeeDetailModal from './components/EmployeeDetailModal';
-import EmployeeDashboard from './components/EmployeeDashboard';
-import ResponsibleAi from './components/ResponsibleAi';
-import PlaceholderView from './components/PlaceholderView';
 
 export default function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [currentRole, setCurrentRole] = useState('manager'); // 'manager' or 'employee'
-    const [currentUser, setCurrentUser] = useState(null); // Sourced from Flask login response
+    const [currentUser, setCurrentUser] = useState(null); // Sourced from Flask login
     const [activeTab, setActiveTab] = useState('dashboard');
+    
+    // Slideout drawer details state (Manager directory only)
     const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
+
+    // Profile Settings States (Requirement 2)
+    const [profileName, setProfileName] = useState('Sarah Jenkins');
+    const [profileTitle, setProfileTitle] = useState('Operations Director');
+    const [profilePhoto, setProfilePhoto] = useState(null); // Base64 data URL string or null
+
+    // Theme (Light/Dark mode) management with localStorage persistence (Requirement 3)
+    const [theme, setTheme] = useState(() => {
+        return localStorage.getItem('theme') || 'dark';
+    });
+
+    useEffect(() => {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('theme', theme);
+    }, [theme]);
+
+    const toggleTheme = () => {
+        setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+    };
 
     const handleLoginSuccess = (userProfile, role) => {
         setCurrentRole(role);
         setCurrentUser(userProfile);
         setIsLoggedIn(true);
         setActiveTab('dashboard');
+
+        if (role === 'manager') {
+            setProfileName('Sarah Jenkins');
+            setProfileTitle('Operations Director');
+        } else {
+            setProfileName(userProfile.name || 'Employee');
+            setProfileTitle(userProfile.role || 'Team Member');
+        }
     };
 
     const handleLogout = () => {
@@ -36,24 +64,34 @@ export default function App() {
         setIsDetailOpen(true);
     };
 
-    // Routing renderer
+    // Client-side Page Router
     const renderActiveContent = () => {
         switch (activeTab) {
             case 'dashboard':
-                return currentRole === 'manager' ? (
-                    <ManagerDashboard />
-                ) : (
-                    <EmployeeDashboard employeeId={currentUser.employee_id} />
-                );
+                return <Dashboard currentRole={currentRole} currentUser={currentUser} />;
             case 'employees':
                 return currentRole === 'manager' ? (
-                    <EmployeeList onViewDetails={handleViewDetails} />
+                    <Employees onViewDetails={handleViewDetails} />
                 ) : null;
+            case 'profile':
+                return (
+                    <Profile 
+                        profileName={profileName}
+                        setProfileName={setProfileName}
+                        profileTitle={profileTitle}
+                        setProfileTitle={setProfileTitle}
+                        profilePhoto={profilePhoto}
+                        setProfilePhoto={setProfilePhoto}
+                        theme={theme}
+                        toggleTheme={toggleTheme}
+                        setActiveTab={setActiveTab}
+                    />
+                );
             case 'scale-balanced':
-                return <ResponsibleAi />;
+                return <ResponsibleAiPage />;
             default:
                 return (
-                    <PlaceholderView 
+                    <PlaceholderViewPage 
                         tabName={activeTab} 
                         role={currentRole} 
                         currentUser={currentUser} 
@@ -68,24 +106,26 @@ export default function App() {
 
     return (
         <div className="app-container">
-            {/* Sidebar Navigation */}
-            <Sidebar 
+            {/* Top Navigation Navbar (Replaces the old sidebar layout) */}
+            <Header 
                 activeTab={activeTab} 
                 setActiveTab={setActiveTab} 
                 currentRole={currentRole} 
                 currentUser={currentUser} 
-                onLogout={handleLogout} 
+                theme={theme}
+                toggleTheme={toggleTheme}
+                profileName={profileName}
+                profileTitle={profileTitle}
+                profilePhoto={profilePhoto}
+                onLogout={handleLogout}
             />
+            
+            {/* Center Content panel */}
+            <div className="content-wrapper">
+                {renderActiveContent()}
+            </div>
 
-            {/* Main Panel Content Area */}
-            <main className="main-panel">
-                <Header activeTab={activeTab} currentRole={currentRole} />
-                <div className="content-wrapper">
-                    {renderActiveContent()}
-                </div>
-            </main>
-
-            {/* Sliding detail pane for employee analysis (Manager view only) */}
+            {/* Sliding Drawer Detail Panel (Manager view only) */}
             {isDetailOpen && (
                 <EmployeeDetailModal 
                     employeeId={selectedEmployeeId} 
