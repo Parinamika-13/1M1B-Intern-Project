@@ -2,11 +2,17 @@ import React, { useState, useEffect } from 'react';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Employees from './pages/Employees';
+import TasksPage from './pages/TasksPage';
+import MeetingsPage from './pages/MeetingsPage';
+import CalendarPage from './pages/CalendarPage';
+import ProgressPage from './pages/ProgressPage';
+import MyWorkloadPage from './pages/MyWorkloadPage';
+import AiInsightsPage from './pages/AiInsightsPage';
 import Profile from './pages/Profile';
 import ResponsibleAiPage from './pages/ResponsibleAiPage';
-import PlaceholderViewPage from './pages/PlaceholderViewPage';
 import Header from './components/Header';
 import EmployeeDetailModal from './components/EmployeeDetailModal';
+import { apiService } from './services/api';
 
 export default function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -39,12 +45,18 @@ export default function App() {
 
     const handleLoginSuccess = (userProfile, role) => {
         setCurrentRole(role);
-        setCurrentUser(userProfile);
+        const resolvedEmpId = apiService.resolveEmployeeId(userProfile);
+        const normalizedUser = {
+            ...userProfile,
+            ...userProfile.profile,
+            employee_id: resolvedEmpId
+        };
+        setCurrentUser(normalizedUser);
         setIsLoggedIn(true);
         setActiveTab('dashboard');
 
-        setProfileName(userProfile.name || '');
-        setProfileTitle(userProfile.role_title || '');
+        setProfileName(normalizedUser.name || '');
+        setProfileTitle(normalizedUser.role_title || '');
     };
 
     const handleLogout = () => {
@@ -63,11 +75,23 @@ export default function App() {
     const renderActiveContent = () => {
         switch (activeTab) {
             case 'dashboard':
-                return <Dashboard currentRole={currentRole} currentUser={currentUser} />;
+                return <Dashboard currentRole={currentRole} currentUser={currentUser} setActiveTab={setActiveTab} />;
             case 'employees':
                 return currentRole === 'manager' ? (
                     <Employees onViewDetails={handleViewDetails} />
                 ) : null;
+            case 'list-check':
+                return <TasksPage role={currentRole} currentUser={currentUser} />;
+            case 'calendar':
+                return <MeetingsPage role={currentRole} currentUser={currentUser} />;
+            case 'full-calendar':
+                return <CalendarPage role={currentRole} currentUser={currentUser} />;
+            case 'chart-gantt':
+                return <ProgressPage role={currentRole} currentUser={currentUser} />;
+            case 'my-workload':
+                return currentRole === 'employee' ? <MyWorkloadPage currentUser={currentUser} /> : null;
+            case 'brain':
+                return <AiInsightsPage role={currentRole} currentUser={currentUser} />;
             case 'profile':
                 return (
                     <Profile 
@@ -85,13 +109,7 @@ export default function App() {
             case 'scale-balanced':
                 return <ResponsibleAiPage />;
             default:
-                return (
-                    <PlaceholderViewPage 
-                        tabName={activeTab} 
-                        role={currentRole} 
-                        currentUser={currentUser} 
-                    />
-                );
+                return <div style={{ color: 'var(--text-secondary)', padding: '24px' }}>Page not found.</div>;
         }
     };
 
@@ -124,7 +142,7 @@ export default function App() {
             {isDetailOpen && (
                 <EmployeeDetailModal 
                     employeeId={selectedEmployeeId} 
-                    onClose={() => setIsDetailOpen(false)} 
+                    onClose={() => { setIsDetailOpen(false); setSelectedEmployeeId(null); }} 
                 />
             )}
         </div>
