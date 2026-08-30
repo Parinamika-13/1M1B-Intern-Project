@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is manager (checks case-insensitively)
+    function isManager() {
+      return request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Manager');
+    }
+
+    // Helper function to check if user is authenticated
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuth() || (resource != null && resource.data.demo == true);
+      allow write: if isManager() || (request.auth != null && request.auth.uid == userId);
+    }
+
+    // Employees collection
+    match /employees/{employeeId} {
+      allow read: if isAuth();
+      allow write: if isManager();
+    }
+
+    // Projects collection
+    match /projects/{projectId} {
+      allow read: if isAuth();
+      allow write: if isManager();
+    }
+
+    // Tasks collection
+    match /tasks/{taskId} {
+      allow read: if isAuth();
+      allow write: if isManager();
+      allow update: if isAuth() && 
+        (request.resource.data.employee_id == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.employee_id);
+    }
+
+    // Meetings collection
+    match /meetings/{meetingId} {
+      allow read: if isAuth();
+      allow write: if isManager();
+    }
+
+    // Calendar notes collection
+    match /calendarNotes/{noteId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+  }
+}
