@@ -192,6 +192,7 @@ export default function Employees({ onViewDetails }) {
                                             <button 
                                                 className="btn-action" 
                                                 onClick={() => onViewDetails(emp.employee_id)}
+                                                style={{ position: 'relative', zIndex: 10, cursor: 'pointer' }}
                                             >
                                                 <i className="fa-solid fa-chart-simple"></i> Details
                                             </button>

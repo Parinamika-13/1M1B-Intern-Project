@@ -2,12 +2,19 @@ import React, { useEffect, useState } from 'react';
 import { apiService } from '../services/api';
 import StatCard from '../components/StatCard';
 
-export default function Dashboard({ currentRole, currentUser }) {
+export default function Dashboard({ currentRole, currentUser, setActiveTab }) {
     const [managerData, setManagerData] = useState(null);
     const [employeeData, setEmployeeData] = useState(null);
     const [deptStats, setDeptStats] = useState([]);
+    const [tasks, setTasks] = useState([]);
+    const [meetings, setMeetings] = useState([]);
+    const [calendarDate, setCalendarDate] = useState(new Date());
+    const [notes, setNotes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [databaseSetupRequired, setDatabaseSetupRequired] = useState(false);
+    const [setupProgress, setSetupProgress] = useState('');
+    const [setupLoading, setSetupLoading] = useState(false);
 
     // ==================== STATE FOR DYNAMIC CONFIGS ====================
     const [departments, setDepartments] = useState([]);
@@ -51,6 +58,13 @@ export default function Dashboard({ currentRole, currentUser }) {
             setLoading(true);
             try {
                 if (currentRole === 'manager') {
+                    const isEmpty = await apiService.isDatabaseEmpty();
+                    if (isEmpty) {
+                        setDatabaseSetupRequired(true);
+                        setLoading(false);
+                        return;
+                    }
+
                     // Fetch dynamic config, departments, and skills first (Requirement 3 & 4)
                     try {
                         const conf = await apiService.getAiConfig();
@@ -118,10 +132,24 @@ export default function Dashboard({ currentRole, currentUser }) {
 
                     // Run initial dynamic assignment query
                     triggerAssignmentQuery(initialSkill, 8, 'High', 5);
+
+                    const [tasksList, meetingsList, notesList] = await Promise.all([
+                        apiService.getTasks(),
+                        apiService.getMeetings(),
+                        apiService.getCalendarNotes(currentUser?.uid || currentUser?.profile?.uid)
+                    ]);
+                    setTasks(tasksList);
+                    setMeetings(meetingsList);
+                    setNotes(notesList);
                 } else if (currentUser) {
                     // Fetch individual employee dashboard data
                     const dashboard = await apiService.getEmployeeDashboard(currentUser.employee_id);
                     setEmployeeData(dashboard);
+                    setTasks(dashboard.tasks || []);
+                    setMeetings(dashboard.meetings || []);
+
+                    const notesList = await apiService.getCalendarNotes(currentUser?.uid || currentUser?.profile?.uid);
+                    setNotes(notesList);
 
                     // Fetch Agent 5 prioritization recommendation
                     const aiResult = await apiService.askEmployeeAssistant(currentUser.employee_id, 'What should I prioritize today?');
@@ -129,8 +157,8 @@ export default function Dashboard({ currentRole, currentUser }) {
                     setEmployeeAiTrace(aiResult.traceability);
                 }
             } catch (err) {
-                console.error(err);
-                setError('Unable to load dashboard workspace. Connection error.');
+                console.error("Dashboard data load error:", err);
+                setError(`Unable to load dashboard workspace. Connection error: ${err.message || err}`);
             } finally {
                 setLoading(false);
             }
@@ -214,12 +242,337 @@ export default function Dashboard({ currentRole, currentUser }) {
         }
     };
 
+    // Helper functions for date calculations in dashboard calendar
+    const getTaskDateStr = (t) => {
+        const today = new Date();
+        const days = parseInt(t.deadline_days_remaining) || 0;
+        const target = new Date(today.getFullYear(), today.getMonth(), today.getDate() + days);
+        return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`;
+    };
+
+    const getMeetingDateStr = (m, idx) => {
+        const today = new Date();
+        const day = (idx % 28) + 1;
+        const target = new Date(today.getFullYear(), today.getMonth(), day);
+        return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`;
+    };
+
+    const handlePrevCalendarMonth = () => {
+        setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1));
+    };
+
+    const handleNextCalendarMonth = () => {
+        setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1));
+    };
+
+    const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
+    const getFirstDayOfMonth = (y, m) => {
+        const day = new Date(y, m, 1).getDay();
+        return day === 0 ? 6 : day - 1; // Mon-Sun index
+    };
+
+    const renderDashboardCalendar = () => {
+        const year = calendarDate.getFullYear();
+        const month = calendarDate.getMonth();
+        const daysInMonth = getDaysInMonth(year, month);
+        const firstDayIndex = getFirstDayOfMonth(year, month);
+        
+        const daysGrid = [];
+        for (let i = 0; i < firstDayIndex; i++) {
+            daysGrid.push(null);
+        }
+        for (let d = 1; d <= daysInMonth; d++) {
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            daysGrid.push({ day: d, dateStr });
+        }
+
+        const getEventsForDate = (dateStr) => {
+            const dateTasks = tasks.filter(t => getTaskDateStr(t) === dateStr);
+            const dateMeetings = meetings.filter((m, idx) => getMeetingDateStr(m, idx) === dateStr);
+            const dateNotes = notes.filter(n => n.date === dateStr);
+            return { tasks: dateTasks, meetings: dateMeetings, notes: dateNotes };
+        };
+
+        const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        
+        // Calculate upcoming 3 items
+        const upcomingItems = [];
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        
+        // Add tasks
+        tasks.forEach(t => {
+            const days = parseInt(t.deadline_days_remaining) || 0;
+            const target = new Date(today.getFullYear(), today.getMonth(), today.getDate() + days);
+            if (days >= 0) {
+                upcomingItems.push({
+                    type: 'task',
+                    title: t.task_title,
+                    subtitle: t.project_name || 'General',
+                    date: target,
+                    daysRemaining: days,
+                    priority: t.priority
+                });
+            }
+        });
+
+        // Add meetings
+        meetings.forEach((m, idx) => {
+            const day = (idx % 28) + 1;
+            const target = new Date(today.getFullYear(), today.getMonth(), day);
+            target.setHours(0,0,0,0);
+            if (target >= today) {
+                const diffTime = target - today;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                upcomingItems.push({
+                    type: 'meeting',
+                    title: m.meeting_title,
+                    subtitle: `Duration: ${m.duration_minutes}m`,
+                    date: target,
+                    daysRemaining: diffDays,
+                    priority: 'Medium'
+                });
+            }
+        });
+
+        // Add notes
+        notes.forEach(n => {
+            const target = new Date(n.date + 'T00:00:00');
+            target.setHours(0,0,0,0);
+            if (target >= today) {
+                const diffTime = target - today;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                upcomingItems.push({
+                    type: 'note',
+                    title: n.text,
+                    subtitle: 'Personal Note',
+                    date: target,
+                    daysRemaining: diffDays,
+                    priority: 'Low'
+                });
+            }
+        });
+
+        // Sort by date/daysRemaining ascending
+        upcomingItems.sort((a, b) => a.daysRemaining - b.daysRemaining);
+        const topUpcoming = upcomingItems.slice(0, 3);
+
+        return (
+            <div className="panel-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 className="panel-title" style={{ margin: 0, fontSize: '0.95rem' }}>
+                        <i className="fa-solid fa-calendar-days" style={{ color: 'var(--accent)', marginRight: '6px' }}></i> Calendar
+                    </h3>
+                    <button 
+                        onClick={() => setActiveTab && setActiveTab('full-calendar')}
+                        style={{ border: 'none', background: 'none', color: 'var(--accent)', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}
+                    >
+                        View Calendar <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: '0.65rem' }}></i>
+                    </button>
+                </div>
+
+                {/* Grid container for calendar and upcoming */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', flexWrap: 'wrap' }}>
+                    {/* Small Calendar Grid */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {monthNames[month]} {year}
+                            </span>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                                <button className="btn-action" onClick={handlePrevCalendarMonth} style={{ padding: '2px 6px', height: 'auto', fontSize: '0.65rem' }}>
+                                    <i className="fa-solid fa-chevron-left"></i>
+                                </button>
+                                <button className="btn-action" onClick={() => setCalendarDate(new Date())} style={{ padding: '2px 6px', height: 'auto', fontSize: '0.6rem', fontWeight: 600 }}>
+                                    Today
+                                </button>
+                                <button className="btn-action" onClick={handleNextCalendarMonth} style={{ padding: '2px 6px', height: 'auto', fontSize: '0.65rem' }}>
+                                    <i className="fa-solid fa-chevron-right"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Weekday headers */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', fontSize: '0.6rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                            {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => <div key={i}>{d}</div>)}
+                        </div>
+
+                        {/* Month days */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '3px' }}>
+                            {daysGrid.map((dayData, idx) => {
+                                if (!dayData) return <div key={`empty-${idx}`}></div>;
+                                const { day, dateStr } = dayData;
+                                const { tasks: dt, meetings: dm, notes: dn } = getEventsForDate(dateStr);
+                                const isToday = dateStr === todayStr;
+                                const total = dt.length + dm.length + dn.length;
+
+                                return (
+                                    <div 
+                                        key={dateStr}
+                                        onClick={() => setActiveTab && setActiveTab('full-calendar')}
+                                        style={{
+                                            height: '24px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '0.7rem',
+                                            borderRadius: 'var(--radius-sm)',
+                                            backgroundColor: isToday ? 'rgba(79, 122, 92, 0.15)' : 'var(--bg-primary)',
+                                            color: isToday ? 'var(--accent)' : 'var(--text-primary)',
+                                            fontWeight: isToday ? 800 : 500,
+                                            border: '1px solid var(--border)',
+                                            cursor: 'pointer',
+                                            position: 'relative'
+                                        }}
+                                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+                                    >
+                                        {day}
+                                        {total > 0 && (
+                                            <span style={{
+                                                position: 'absolute',
+                                                bottom: '2px',
+                                                width: '3px',
+                                                height: '3px',
+                                                borderRadius: '50%',
+                                                backgroundColor: dt.length > 0 ? 'var(--accent)' : (dm.length > 0 ? 'var(--info)' : 'var(--text-secondary)')
+                                            }}></span>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Upcoming Panel */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>
+                            Upcoming
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {topUpcoming.length === 0 ? (
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '12px 0' }}>
+                                    You're all caught up.
+                                </div>
+                            ) : (
+                                topUpcoming.map((item, idx) => {
+                                    const dateLabel = item.daysRemaining === 0 ? 'Today' : (item.daysRemaining === 1 ? 'Tomorrow' : `In ${item.daysRemaining} days`);
+                                    return (
+                                        <div 
+                                            key={idx} 
+                                            onClick={() => setActiveTab && setActiveTab('full-calendar')}
+                                            style={{
+                                                padding: '6px 8px',
+                                                border: '1px solid var(--border)',
+                                                borderRadius: 'var(--radius-sm)',
+                                                backgroundColor: 'var(--surface)',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '2px'
+                                            }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: 'var(--text-muted)' }}>
+                                                <span>{dateLabel}</span>
+                                                <span style={{ fontWeight: 600 }}>{item.subtitle}</span>
+                                            </div>
+                                            <div style={{ fontSize: '0.725rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {item.title}
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Dots Legend */}
+                <div style={{ display: 'flex', gap: '10px', fontSize: '0.6rem', color: 'var(--text-secondary)', borderTop: '1px solid var(--border)', paddingTop: '8px', marginTop: '4px' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: 'var(--accent)' }}></span> Deadline
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: 'var(--info)' }}></span> Meeting
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: 'var(--text-secondary)' }}></span> Personal Note
+                    </span>
+                </div>
+            </div>
+        );
+    };
+
     if (loading) {
         return <div style={{ color: 'var(--text-secondary)', padding: '24px', fontSize: '0.875rem' }}>Loading workspace dashboard...</div>;
     }
 
     if (error) {
         return <div style={{ color: 'var(--danger)', padding: '24px', fontSize: '0.875rem' }}>{error}</div>;
+    }
+
+    // ==================== RENDER DATABASE SETUP ONBOARDING ====================
+    if (currentRole === 'manager' && databaseSetupRequired) {
+        const handleSetup = async () => {
+            setSetupLoading(true);
+            try {
+                await apiService.migrateExcelDataToFirestore((prog) => {
+                    setSetupProgress(prog);
+                });
+                setDatabaseSetupRequired(false);
+                window.location.reload();
+            } catch (err) {
+                console.error("Migration failed:", err);
+                setSetupProgress(`Error: ${err.message}`);
+            } finally {
+                setSetupLoading(false);
+            }
+        };
+
+        return (
+            <div className="tab-view animate-fade-in" style={{ maxWidth: '600px', margin: '40px auto' }}>
+                <div className="panel-card" style={{ padding: '32px', textAlign: 'center' }}>
+                    <h2 className="text-heading font-serif" style={{ fontSize: '1.75rem', marginBottom: '16px', color: 'var(--accent)' }}>
+                        <i className="fa-solid fa-cloud-arrow-up" style={{ marginRight: '10px' }}></i>
+                        Database Initialization Required
+                    </h2>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.925rem', marginBottom: '24px', lineHeight: '1.6' }}>
+                        Welcome to SustWork AI! The Firestore database collections are currently empty. 
+                        Click the button below to initialize the system by importing the primary workforce dataset.
+                    </p>
+                    
+                    <button 
+                        className="btn-primary" 
+                        onClick={handleSetup} 
+                        disabled={setupLoading}
+                        style={{ padding: '12px 24px', fontSize: '1rem', fontWeight: 600 }}
+                    >
+                        {setupLoading ? 'Importing Dataset...' : 'Initialize Firestore Database'}
+                    </button>
+
+                    {setupProgress && (
+                        <div style={{
+                            marginTop: '24px',
+                            padding: '14px',
+                            backgroundColor: 'var(--bg-primary)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 'var(--radius-md)',
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '0.75rem',
+                            color: 'var(--text-secondary)',
+                            textAlign: 'left',
+                            whiteSpace: 'pre-wrap',
+                            lineHeight: '1.5'
+                        }}>
+                            {setupProgress}
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
     }
 
     // ==================== RENDER MANAGER PORTAL ====================
@@ -702,6 +1055,9 @@ export default function Dashboard({ currentRole, currentUser }) {
                                 </div>
                             </div>
                         </div>
+
+                        {/* Calendar Card */}
+                        {renderDashboardCalendar()}
                     </div>
                 </div>
             </div>
@@ -711,6 +1067,7 @@ export default function Dashboard({ currentRole, currentUser }) {
     // ==================== RENDER EMPLOYEE PORTAL ====================
     if (currentRole === 'employee' && employeeData) {
         const {
+            employee_name,
             utilization_percent,
             workload_risk,
             completed_tasks,
@@ -751,21 +1108,93 @@ export default function Dashboard({ currentRole, currentUser }) {
             return 'priority-low';
         };
 
+        // Sort and slice focus tasks
+        const prioritiesList = [...tasks]
+            .filter(t => t.status !== 'Completed' && t.status !== 'Done')
+            .sort((a, b) => {
+                if (a.priority === 'High' && b.priority !== 'High') return -1;
+                if (a.priority !== 'High' && b.priority === 'High') return 1;
+                return (parseInt(a.deadline_days_remaining) || 0) - (parseInt(b.deadline_days_remaining) || 0);
+            })
+            .slice(0, 3);
+
+        const deadlineTasks = [...tasks]
+            .filter(t => t.status !== 'Completed' && t.status !== 'Done')
+            .sort((a, b) => (parseInt(a.deadline_days_remaining) || 0) - (parseInt(b.deadline_days_remaining) || 0))
+            .slice(0, 3);
+
+        // Workload hours calculations
+        const taskHours = tasks.filter(t => t.status !== 'Completed' && t.status !== 'Done').reduce((sum, t) => sum + (parseFloat(t.estimated_hours) || 0), 0);
+        const meetingHours = meetings.reduce((sum, m) => sum + (parseFloat(m.duration_minutes) || 0) / 60.0, 0);
+
+        // 2-3 dynamic insights
+        const dynamicInsights = [];
+        if (utilization_percent > 110) {
+            dynamicInsights.push("High Workload Alert: Your utilization is currently above 110%, which increases stress risks.");
+        } else {
+            dynamicInsights.push("Workload Health: Your utilization is well-balanced within normal limits.");
+        }
+        if (overdue_tasks > 0) {
+            dynamicInsights.push(`Urgent Action: You have ${overdue_tasks} overdue tasks. Prioritize completing them first.`);
+        }
+        if (meetingHours > 8) {
+            dynamicInsights.push("Meeting Load: Meeting duration exceeds 8 hours this week. Secure focus blocks for tasks.");
+        }
+
         return (
-            <div className="animate-fade-in">
+            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {/* WELCOME HEADER */}
+                <div className="panel-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <h2 style={{ fontSize: '1.5rem', margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Good day, {employee_name}
+                    </h2>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: 0 }}>
+                        Here's your personal work overview for today.
+                    </p>
+                </div>
+
+                {/* SUMMARY KPI CARDS */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px' }}>
+                    <div className="metric-card" style={{ padding: '16px' }}>
+                        <div className="metric-title" style={{ fontSize: '0.75rem' }}>Total Tasks</div>
+                        <div className="metric-value font-mono" style={{ fontSize: '1.5rem', margin: '4px 0' }}>{tasks.length}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Assigned to your profile</div>
+                    </div>
+                    <div className="metric-card" style={{ padding: '16px' }}>
+                        <div className="metric-title" style={{ fontSize: '0.75rem', color: 'var(--success)' }}>Completed</div>
+                        <div className="metric-value font-mono" style={{ fontSize: '1.5rem', margin: '4px 0', color: 'var(--success)' }}>{completed_tasks}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Tasks resolved</div>
+                    </div>
+                    <div className="metric-card" style={{ padding: '16px' }}>
+                        <div className="metric-title" style={{ fontSize: '0.75rem', color: 'var(--info)' }}>Pending</div>
+                        <div className="metric-value font-mono" style={{ fontSize: '1.5rem', margin: '4px 0', color: 'var(--info)' }}>{tasks.length - completed_tasks}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Active backlog queue</div>
+                    </div>
+                    <div className="metric-card" style={{ padding: '16px' }}>
+                        <div className="metric-title" style={{ fontSize: '0.75rem', color: 'var(--danger)' }}>Overdue</div>
+                        <div className="metric-value font-mono" style={{ fontSize: '1.5rem', margin: '4px 0', color: 'var(--danger)' }}>{overdue_tasks}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Target deadline missed</div>
+                    </div>
+                    <div className="metric-card" style={{ padding: '16px' }}>
+                        <div className="metric-title" style={{ fontSize: '0.75rem', color: 'var(--accent)' }}>Completion Rate</div>
+                        <div className="metric-value font-mono" style={{ fontSize: '1.5rem', margin: '4px 0', color: 'var(--accent)' }}>{Math.round(completion_rate_percent)}%</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Overall target progress</div>
+                    </div>
+                </div>
+
                 <div className="dashboard-row">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                         
-                        {/* Tasks Checklist */}
+                        {/* TODAY'S PRIORITIES */}
                         <div className="panel-card">
-                            <h3 className="panel-title"><i className="fa-solid fa-list-check"></i> Focus Tasks</h3>
+                            <h3 className="panel-title"><i className="fa-solid fa-list-check"></i> Today's Priorities</h3>
                             <div className="checklist-container">
-                                {tasks.length === 0 ? (
+                                {prioritiesList.length === 0 ? (
                                     <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px 0', fontSize: '0.85rem' }}>
-                                        No tasks assigned.
+                                        No active tasks to prioritize. Backlog is clear!
                                     </div>
                                 ) : (
-                                    tasks.slice(0, 5).map(task => {
+                                    prioritiesList.map(task => {
                                         const isCompleted = task.status === 'Completed' || task.status === 'Done';
                                         return (
                                             <div key={task.task_id} className={`checklist-item ${isCompleted ? 'checked' : ''}`}>
@@ -793,9 +1222,36 @@ export default function Dashboard({ currentRole, currentUser }) {
                             </div>
                         </div>
 
-                        {/* Meetings Timeline */}
+                        {/* UPCOMING DEADLINES */}
                         <div className="panel-card">
-                            <h3 className="panel-title"><i className="fa-solid fa-video"></i> Today's Meetings</h3>
+                            <h3 className="panel-title"><i className="fa-solid fa-clock"></i> Upcoming Deadlines</h3>
+                            <div className="checklist-container">
+                                {deadlineTasks.length === 0 ? (
+                                    <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px 0', fontSize: '0.85rem' }}>
+                                        No upcoming task deadlines.
+                                    </div>
+                                ) : (
+                                    deadlineTasks.map(task => (
+                                        <div key={task.task_id} className="checklist-item" style={{ borderLeft: '3px solid var(--accent)' }}>
+                                            <div className="checklist-item-body" style={{ marginLeft: '6px' }}>
+                                                <div className="checklist-item-title">{task.task_title}</div>
+                                                <div className="checklist-meta">
+                                                    <span style={{ color: task.deadline_days_remaining <= 2 ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                                                        {task.deadline_days_remaining} days remaining (Due soon)
+                                                    </span>
+                                                    <span>Complexity: {task.task_complexity}</span>
+                                                    <span>Est: {task.estimated_hours}h</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        {/* MEETING OVERVIEW */}
+                        <div className="panel-card">
+                            <h3 className="panel-title"><i className="fa-solid fa-video"></i> Today's Schedule</h3>
                             <div className="timeline">
                                 {meetings.length === 0 ? (
                                     <div style={{ color: 'var(--text-muted)', paddingLeft: '10px', fontSize: '0.85rem' }}>
@@ -822,9 +1278,9 @@ export default function Dashboard({ currentRole, currentUser }) {
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                         
-                        {/* Workload Status */}
+                        {/* WORKLOAD SNAPSHOT */}
                         <div className="panel-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justify: 'center', minHeight: '230px' }}>
-                            <h3 className="panel-title" style={{ alignSelf: 'flex-start' }}><i className="fa-solid fa-gauge-high"></i> Workload Index</h3>
+                            <h3 className="panel-title" style={{ alignSelf: 'flex-start' }}><i className="fa-solid fa-gauge-high"></i> Workload Snapshot</h3>
                             <div className="workload-gauge-wrapper">
                                 <div className="gauge-numeric font-serif" style={{ color: workloadTheme.color, fontSize: '3.5rem' }}>
                                     {Math.round(utilization_percent)}%
@@ -836,41 +1292,41 @@ export default function Dashboard({ currentRole, currentUser }) {
                             <div className="gauge-description" style={{ fontSize: '0.8rem', textAlign: 'center', marginTop: '10px', color: 'var(--text-secondary)' }}>
                                 {workloadTheme.desc}
                             </div>
+                            <div style={{
+                                width: '100%',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                borderTop: '1px solid var(--border)',
+                                paddingTop: '12px',
+                                marginTop: '14px',
+                                fontSize: '0.75rem',
+                                color: 'var(--text-secondary)'
+                            }}>
+                                <span>Task backlogs: <strong>{Math.round(taskHours)}h</strong></span>
+                                <span>Meetings duration: <strong>{meetingHours.toFixed(1)}h</strong></span>
+                            </div>
                         </div>
 
-                        {/* Progress metrics */}
+                        {/* AI INSIGHT PREVIEW */}
                         <div className="panel-card">
-                            <h3 className="panel-title"><i className="fa-solid fa-spinner"></i> Weekly Milestones</h3>
-                            <div className="progress-grid">
-                                <div className="progress-card">
-                                    <div className="progress-card-num font-mono" style={{ color: 'var(--success)' }}>{completed_tasks}</div>
-                                    <div className="progress-card-label">Completed</div>
-                                </div>
-                                <div className="progress-card">
-                                    <div className="progress-card-num font-mono" style={{ color: 'var(--info)' }}>{in_progress_tasks}</div>
-                                    <div className="progress-card-label">Active</div>
-                                </div>
-                                <div className="progress-card">
-                                    <div className="progress-card-num font-mono" style={{ color: 'var(--danger)' }}>{overdue_tasks}</div>
-                                    <div className="progress-card-label">Overdue</div>
-                                </div>
-                            </div>
-
-                            <div style={{ marginTop: '16px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                                    <span>Sprint Completion Rate</span>
-                                    <span style={{ fontWeight: 600 }} className="font-mono">{Math.round(completion_rate_percent)}%</span>
-                                </div>
-                                <div className="progress-track">
-                                    <div 
-                                        className="progress-bar" 
-                                        style={{ backgroundColor: 'var(--accent)', width: `${completion_rate_percent}%` }}
-                                    ></div>
-                                </div>
+                            <h3 className="panel-title"><i className="fa-solid fa-wand-magic-sparkles"></i> AI Insight Preview</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+                                {dynamicInsights.map((ins, idx) => (
+                                    <div key={idx} style={{
+                                        border: '1px solid var(--border)',
+                                        padding: '10px 14px',
+                                        backgroundColor: 'var(--bg-primary)',
+                                        fontSize: '0.8rem',
+                                        borderRadius: 'var(--radius-sm)',
+                                        color: 'var(--text-primary)'
+                                    }}>
+                                        {ins}
+                                    </div>
+                                ))}
                             </div>
                         </div>
 
-                        {/* Agent 5 prioritizer results */}
+                        {/* AI PRIORITIZATION ASSISTANT */}
                         <div className="ai-insight-box">
                             <div className="ai-insight-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span><i className="fa-solid fa-wand-magic-sparkles"></i> AI Prioritization Assistant</span>
@@ -906,6 +1362,9 @@ export default function Dashboard({ currentRole, currentUser }) {
                                 </div>
                             )}
                         </div>
+
+                        {/* Calendar Card */}
+                        {renderDashboardCalendar()}
                     </div>
                 </div>
             </div>
