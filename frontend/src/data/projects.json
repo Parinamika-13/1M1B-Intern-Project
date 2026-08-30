@@ -1,0 +1,107 @@
+[
+  {
+    "project_id": "P001",
+    "project_name": "Project_001",
+    "category": "Data Analytics",
+    "priority": "High",
+    "status": "Active"
+  },
+  {
+    "project_id": "P002",
+    "project_name": "Project_002",
+    "category": "Operations",
+    "priority": "Medium",
+    "status": "Active"
+  },
+  {
+    "project_id": "P003",
+    "project_name": "Project_003",
+    "category": "Operations",
+    "priority": "High",
+    "status": "Active"
+  },
+  {
+    "project_id": "P004",
+    "project_name": "Project_004",
+    "category": "Operations",
+    "priority": "Low",
+    "status": "Completed"
+  },
+  {
+    "project_id": "P005",
+    "project_name": "Project_005",
+    "category": "Data Analytics",
+    "priority": "Medium",
+    "status": "Completed"
+  },
+  {
+    "project_id": "P006",
+    "project_name": "Project_006",
+    "category": "Marketing Campaign",
+    "priority": "Medium",
+    "status": "Active"
+  },
+  {
+    "project_id": "P007",
+    "project_name": "Project_007",
+    "category": "Sustainability",
+    "priority": "Low",
+    "status": "Planning"
+  },
+  {
+    "project_id": "P008",
+    "project_name": "Project_008",
+    "category": "Customer Support",
+    "priority": "Medium",
+    "status": "Active"
+  },
+  {
+    "project_id": "P009",
+    "project_name": "Project_009",
+    "category": "Sustainability",
+    "priority": "Medium",
+    "status": "Active"
+  },
+  {
+    "project_id": "P010",
+    "project_name": "Project_010",
+    "category": "Customer Support",
+    "priority": "Medium",
+    "status": "Planning"
+  },
+  {
+    "project_id": "P011",
+    "project_name": "Project_011",
+    "category": "Sustainability",
+    "priority": "Medium",
+    "status": "Planning"
+  },
+  {
+    "project_id": "P012",
+    "project_name": "Project_012",
+    "category": "Product Development",
+    "priority": "Low",
+    "status": "Completed"
+  },
+  {
+    "project_id": "P013",
+    "project_name": "Project_013",
+    "category": "Operations",
+    "priority": "High",
+    "status": "Completed"
+  },
+  {
+    "project_id": "P014",
+    "project_name": "Project_014",
+    "category": "Marketing Campaign",
+    "priority": "Medium",
+    "status": "Completed"
+  },
+  {
+    "project_id": "P015",
+    "project_name": "Project_015",
+    "category": "Operations",
+    "priority": "Medium",
+    "status": "Active"
+  }
+]
