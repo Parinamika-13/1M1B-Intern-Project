@@ -124,19 +124,23 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                                         color: detail.workload_risk === 'High' ? 'var(--danger)' : 
                                                detail.workload_risk === 'Medium' ? 'var(--warning)' : 'var(--success)'
                                     }}>
-                                        {Math.round(detail.utilization_percent)}%
+                                        {typeof detail.utilization_percent === 'number' && !isNaN(detail.utilization_percent)
+                                            ? `${Math.round(detail.utilization_percent)}%`
+                                            : '—'}
                                     </div>
                                 </div>
                                 <div className="detail-stat-card">
                                     <div className="detail-stat-label">Task Status</div>
                                     <div className="detail-stat-value" style={{ color: 'var(--text-primary)' }}>
-                                        {detail.completed_tasks} / {detail.total_tasks}
+                                        {detail.completed_tasks ?? 0} / {detail.total_tasks ?? 0}
                                     </div>
                                 </div>
                                 <div className="detail-stat-card">
                                     <div className="detail-stat-label">Satisfaction</div>
                                     <div className="detail-stat-value" style={{ color: 'var(--accent)' }}>
-                                        {detail.employee_satisfaction_score.toFixed(1)}/10
+                                        {typeof detail.employee_satisfaction_score === 'number' && !isNaN(detail.employee_satisfaction_score)
+                                            ? `${detail.employee_satisfaction_score.toFixed(1)}/10`
+                                            : '—'}
                                     </div>
                                 </div>
                             </div>
@@ -173,12 +177,12 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                             {activeTab === 'tasks' && (
                                 <div className="tab-pane">
                                     <div className="checklist-container">
-                                        {detail.tasks.length === 0 ? (
+                                        {(!detail.tasks || detail.tasks.length === 0) ? (
                                             <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px 0', fontSize: '0.85rem' }}>
                                                 No tasks currently assigned.
                                             </div>
                                         ) : (
-                                            detail.tasks.map((task) => {
+                                            (detail.tasks || []).map((task) => {
                                                 const isCompleted = task.status === 'Completed' || task.status === 'Done';
                                                 return (
                                                     <div key={task.task_id} className={`checklist-item ${isCompleted ? 'checked' : ''}`}>
@@ -207,12 +211,12 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                             {activeTab === 'meetings' && (
                                 <div className="tab-pane">
                                     <div className="timeline">
-                                        {detail.meetings.length === 0 ? (
+                                        {(!detail.meetings || detail.meetings.length === 0) ? (
                                             <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px 0', fontSize: '0.85rem' }}>
                                                 No scheduled meetings.
                                             </div>
                                         ) : (
-                                            detail.meetings.map((meeting, index) => {
+                                            (detail.meetings || []).map((meeting, index) => {
                                                 const times = ["09:30 AM", "11:00 AM", "01:30 PM", "03:00 PM", "04:30 PM"];
                                                 const timeStr = times[index % times.length];
                                                 return (
@@ -252,7 +256,7 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                                             Note: Supplementary skills are inferred based on department context.
                                         </div>
                                         <div className="skills-container">
-                                            {detail.supplementary_skills.map((skill, index) => (
+                                            {(detail.supplementary_skills || []).map((skill, index) => (
                                                 <span key={index} className="skill-tag" style={{ borderStyle: 'dashed', backgroundColor: 'var(--bg-primary)' }}>{skill} (Inferred)</span>
                                             ))}
                                         </div>
@@ -265,34 +269,34 @@ export default function EmployeeDetailModal({ employeeId, onClose }) {
                                     <div style={{ marginBottom: '20px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
                                             <span>Task Completion Rate</span>
-                                            <span style={{ fontWeight: 600 }}>{Math.round(detail.completion_rate_percent)}%</span>
+                                            <span style={{ fontWeight: 600 }}>{Math.round(detail.completion_rate_percent || 0)}%</span>
                                         </div>
                                         <div className="progress-track">
                                             <div 
                                                 className="progress-bar" 
-                                                style={{ backgroundColor: 'var(--accent)', width: `${detail.completion_rate_percent}%` }}
+                                                style={{ backgroundColor: 'var(--accent)', width: `${detail.completion_rate_percent || 0}%` }}
                                             ></div>
                                         </div>
                                     </div>
                                     
-                                    <div style={{ display: 'flex', flexParagraph: 'column', gap: '12px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
                                             <span>Overdue Tasks:</span>
-                                            <span style={{ fontWeight: 600, color: 'var(--danger)' }}>{detail.overdue_tasks}</span>
+                                            <span style={{ fontWeight: 600, color: 'var(--danger)' }}>{detail.overdue_tasks ?? 0}</span>
                                         </div>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
                                             <span>Pending Tasks:</span>
                                             <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                {detail.pending_tasks + detail.in_progress_tasks}
+                                                {(detail.pending_tasks || 0) + (detail.in_progress_tasks || 0)}
                                             </span>
                                         </div>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
                                             <span>Weekly Meeting Hours:</span>
-                                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{detail.meeting_hours.toFixed(1)} hrs</span>
+                                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{(detail.meeting_hours || 0).toFixed(1)} hrs</span>
                                         </div>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '4px' }}>
                                             <span>Leaves Taken (Month):</span>
-                                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{detail.leave_days_this_month} days</span>
+                                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{detail.leave_days_this_month ?? 0} days</span>
                                         </div>
                                     </div>
                                 </div>

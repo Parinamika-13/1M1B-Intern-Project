@@ -113,6 +113,7 @@ export default function Header({
         { id: 'employees', label: 'Employees', icon: 'fa-users' },
         { id: 'list-check', label: 'Tasks', icon: 'fa-list-check' },
         { id: 'calendar', label: 'Meetings', icon: 'fa-video' },
+        { id: 'full-calendar', label: 'Work Calendar', icon: 'fa-calendar-days' },
         { id: 'chart-gantt', label: 'Progress', icon: 'fa-spinner' },
         { id: 'brain', label: 'AI Insights', icon: 'fa-brain' },
         { id: 'scale-balanced', label: 'Responsible AI', icon: 'fa-scale-balanced' }
@@ -123,6 +124,7 @@ export default function Header({
         { id: 'dashboard', label: 'Dashboard', icon: 'fa-chart-line' },
         { id: 'list-check', label: 'My Tasks', icon: 'fa-list-check' },
         { id: 'calendar', label: 'My Meetings', icon: 'fa-video' },
+        { id: 'full-calendar', label: 'My Calendar', icon: 'fa-calendar-days' },
         { id: 'chart-gantt', label: 'My Progress', icon: 'fa-spinner' },
         { id: 'my-workload', label: 'My Workload', icon: 'fa-gauge-high' },
         { id: 'brain', label: 'AI Assistant', icon: 'fa-robot' }
